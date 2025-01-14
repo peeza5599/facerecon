@@ -34,5 +34,23 @@
       "neutral": 0.68
     },
     "timestamp": "2025-01-12 15:12:35"
+  },
+  {
+    "id": "26542",
+    "name": "Peerapat",
+    "Room_Number": "987",
+    "total_attendance": 93,
+    "last_attendance_time": "2025-01-14 09:37:39",
+    "dominant_emotion": "neutral",
+    "emotion_scores": {
+      "angry": 0.07,
+      "disgust": 0.0,
+      "fear": 0.03,
+      "happy": 0.0,
+      "sad": 0.26,
+      "surprise": 0.0,
+      "neutral": 0.63
+    },
+    "timestamp": "2025-01-14 09:38:05"
   }
 ]
