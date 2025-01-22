@@ -5,13 +5,12 @@ import cv2
 import face_recognition
 import cvzone
 import firebase_admin
-from firebase_admin import credentials
-from firebase_admin import db
-from firebase_admin import storage
+from firebase_admin import credentials, db, storage
 import requests
 from fer import FER
 from datetime import datetime, timedelta
-import json
+import psycopg2
+from psycopg2.extras import Json
 
 # Initialize Firebase
 cred = credentials.Certificate("serviceAccountKey.json")
@@ -19,23 +18,25 @@ firebase_admin.initialize_app(cred, {
     'databaseURL': "https://face-recognition-459a6-default-rtdb.asia-southeast1.firebasedatabase.app/",
     'storageBucket': "face-recognition-459a6.appspot.com"
 })
-
 bucket = storage.bucket()
 
+# Initialize PostgreSQL Connection
+conn_string = "postgresql://facerecon_owner:NsqA5QSpbT2G@ep-super-bonus-a1hmwxyx.ap-southeast-1.aws.neon.tech/facerecon?sslmode=require"
+
+# Initialize FER detector
+emotion_detector = FER(mtcnn=True)
+
+# Video capture setup
 cap = cv2.VideoCapture(0)
 cap.set(3, 640)
 cap.set(4, 480)
 
+# Load background and modes
 imgBackground = cv2.imread('Resources/background.png')
-
-# Importing the mode images into a list
 folderModePath = 'Resources/Modes'
-modePathList = os.listdir(folderModePath)
-imgModeList = []
-for path in modePathList:
-    imgModeList.append(cv2.imread(os.path.join(folderModePath, path)))
+imgModeList = [cv2.imread(os.path.join(folderModePath, path)) for path in os.listdir(folderModePath)]
 
-# Load the encoding file
+# Load encodings
 print("Loading Encode File ...")
 file = open('EncodeFile.p', 'rb')
 encodeListKnownWithIds = pickle.load(file)
@@ -43,44 +44,49 @@ file.close()
 encodeListKnown, studentIds = encodeListKnownWithIds
 print("Encode File Loaded")
 
-# Initialize variables
+# Variables
 modeType = 0
 counter = 0
 imgStudent = []
-
-# Initialize FER detector
-emotion_detector = FER(mtcnn=True)
-
-# ตัวแปรสำหรับเก็บเวลาการบันทึก log ล่าสุด
 last_log_times = {}
 log_interval = timedelta(seconds=30)
-
-# ตัวแปรสำหรับเก็บเวลาการแจ้งเตือนคนที่ไม่รู้จัก
 last_unknown_alert_time = {}
 unknown_alert_interval = timedelta(seconds=20)
 
-# Function to log data to file
-def log_to_file(data):
-    log_file = 'log.json'
+# LINE Notify
+LINE_NOTIFY_TOKEN = "cknZg26SLz2AhsgQKOMxzKVfOu5H0xlCPDeCXjIoc7Z"
 
-    if os.path.exists(log_file):
-        with open(log_file, 'r') as f:
-            try:
-                logs = json.load(f)
-            except json.JSONDecodeError:
-                logs = []
-    else:
-        logs = []
+# PostgreSQL: Save log_data to database
+def save_log_to_postgresql(log_data):
+    try:
+        conn = psycopg2.connect(conn_string)
+        cursor = conn.cursor()
+        insert_query = """
+        INSERT INTO logs (
+            user_id, name, room_number, total_attendance,
+            last_attendance_time, dominant_emotion, emotion_scores, timestamp
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(insert_query, (
+            log_data['id'],
+            log_data['name'],
+            log_data['Room_Number'],
+            log_data['total_attendance'],
+            log_data['last_attendance_time'],
+            log_data['dominant_emotion'],
+            Json(log_data['emotion_scores']),
+            log_data['timestamp']
+        ))
+        conn.commit()
+        print("Log data saved to PostgreSQL!")
+    except Exception as e:
+        print(f"Error saving log to PostgreSQL: {e}")
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
 
-    logs.append(data)
-
-    with open(log_file, 'w') as f:
-        try:
-            json.dump(logs, f, indent=2)
-        except Exception as e:
-            print(f"Error writing to log file: {e}")
-
-# Function to send LINE notifications
+# Send LINE notification
 def send_line_notify(message, token):
     url = "https://notify-api.line.me/api/notify"
     headers = {"Authorization": f"Bearer {token}"}
@@ -157,7 +163,9 @@ while True:
                     emotion_scores = emotions[0]["emotions"]
                     dominant_emotion = max(emotion_scores, key=emotion_scores.get)
 
-                    # ตรวจสอบว่าเวลาในการบันทึก log ล่าสุดผ่านไปแล้วหรือไม่
+                if emotions:
+                    emotion_scores = emotions[0]["emotions"]
+                    dominant_emotion = max(emotion_scores, key=emotion_scores.get)
                     current_time = datetime.now()
                     if id not in last_log_times or current_time - last_log_times[id] > log_interval:
                         log_data = {
@@ -170,10 +178,7 @@ while True:
                             'emotion_scores': emotion_scores,
                             'timestamp': current_time.strftime("%Y-%m-%d %H:%M:%S")
                         }
-                        # บันทึก log
-                        log_to_file(log_data)
-                        
-                        # อัพเดทเวลาในการบันทึก log ล่าสุด
+                        save_log_to_postgresql(log_data)
                         last_log_times[id] = current_time
 
                 # Update data of attendance
