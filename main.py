@@ -52,6 +52,8 @@ last_log_times = {}
 log_interval = timedelta(seconds=30)
 last_unknown_alert_time = {}
 unknown_alert_interval = timedelta(seconds=20)
+unknown_face_counter = {} 
+required_unknown_time = 10  
 
 # LINE Notify
 LINE_NOTIFY_TOKEN = "cknZg26SLz2AhsgQKOMxzKVfOu5H0xlCPDeCXjIoc7Z"
@@ -138,14 +140,24 @@ while True:
         if id == -1:  # แจ้งเตือนเมื่อไม่พบผู้ในระบบ
             current_time = datetime.now()
 
-            # ตรวจสอบว่าเวลาที่ผ่านมาเกิน 20 วินาทีหรือยัง
-            if id not in last_unknown_alert_time or current_time - last_unknown_alert_time[id] > unknown_alert_interval:
-                message = "พบบุคคลที่ไม่รู้จักในระบบ! กรุณาตรวจสอบ."
-                send_line_notify(message, LINE_NOTIFY_TOKEN)
-                print("Unknown face detected and notification sent.")
+                            # เริ่มนับเวลาเมื่อเจอคนไม่รู้จัก
+            if id not in unknown_face_counter:
+                    unknown_face_counter[id] = current_time
 
-                # อัพเดทเวลาแจ้งเตือนล่าสุด
-                last_unknown_alert_time[id] = current_time
+            elapsed_time = (current_time - unknown_face_counter[id]).total_seconds()
+
+                # ตรวจสอบว่าผ่านไปแล้ว 10 วินาทีหรือไม่
+            if elapsed_time >= required_unknown_time:
+                if id not in last_unknown_alert_time or current_time - last_unknown_alert_time[id] > unknown_alert_interval:
+                    message = "พบบุคคลที่ไม่รู้จักในระบบ! กรุณาตรวจสอบ."
+                    send_line_notify(message, LINE_NOTIFY_TOKEN)
+                    print("Unknown face detected and notification sent.")
+
+                        # อัพเดทเวลาแจ้งเตือนล่าสุด
+                    last_unknown_alert_time[id] = current_time
+                        
+                        # รีเซ็ตตัวนับหลังจากแจ้งเตือน
+                    unknown_face_counter[id] = current_time
 
         if counter != 0:
             if counter == 1:
@@ -228,6 +240,10 @@ while True:
                     studentInfo = []
                     imgStudent = []
                     imgBackground[44:44 + 633, 808:808 + 414] = imgModeList[modeType]
+
+    else:
+        # ถ้าไม่เจอใบหน้าใด ๆ ให้รีเซ็ตตัวนับทั้งหมด
+        unknown_face_counter.clear()
 
     cv2.imshow("Face Attendance", imgBackground)
     cv2.waitKey(1)
