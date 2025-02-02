@@ -53,7 +53,7 @@ log_interval = timedelta(seconds=30)
 last_unknown_alert_time = {}
 unknown_alert_interval = timedelta(seconds=20)
 unknown_face_counter = {} 
-required_unknown_time = 10  
+required_unknown_time = 5 
 
 # LINE Notify
 LINE_NOTIFY_TOKEN = "cknZg26SLz2AhsgQKOMxzKVfOu5H0xlCPDeCXjIoc7Z"
