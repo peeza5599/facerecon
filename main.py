@@ -11,6 +11,7 @@ from fer import FER
 from datetime import datetime, timedelta
 import psycopg2
 from psycopg2.extras import Json
+import subprocess
 
 # Initialize Firebase
 cred = credentials.Certificate("serviceAccountKey.json")
@@ -35,6 +36,35 @@ cap.set(4, 480)
 imgBackground = cv2.imread('Resources/background.png')
 folderModePath = 'Resources/Modes'
 imgModeList = [cv2.imread(os.path.join(folderModePath, path)) for path in os.listdir(folderModePath)]
+
+# ✅ ดาวน์โหลดภาพจาก Firebase Storage
+def download_images_from_firebase():
+    folderPath = "Images"
+    if not os.path.exists(folderPath):
+        os.makedirs(folderPath)
+
+    bucket = storage.bucket()
+    blobs = bucket.list_blobs()
+
+    for blob in blobs:
+        file_name = os.path.basename(blob.name)
+        file_path = os.path.join(folderPath, file_name)
+        
+        if not os.path.exists(file_path):  # โหลดเฉพาะไฟล์ที่ยังไม่มี
+            print(f"Downloading {file_name} ...")
+            blob.download_to_filename(file_path)
+
+    print("✅ All images downloaded from Firebase Storage!")
+
+# ✅ รัน EncodeGenerator.py
+def run_encode_generator():
+    print("🔄 Running EncodeGenerator.py ...")
+    subprocess.run(["python3", "EncodeGenerator.py"])  # เรียกใช้ EncodeGenerator.py
+    print("✅ EncodeGenerator.py completed!")
+
+# 🔽 เรียกใช้ฟังก์ชัน
+download_images_from_firebase()
+run_encode_generator()
 
 # Load encodings
 print("Loading Encode File ...")
@@ -199,7 +229,7 @@ while True:
                 print(secondsElapsed)
                 if secondsElapsed > 30:
                     ref = db.reference(f'room/{id}')
-                    studentInfo['total_attendance'] += 1
+                    studentInfo['total_attendance'] = int(studentInfo['total_attendance']) + 1
                     ref.child('total_attendance').set(studentInfo['total_attendance'])
                     ref.child('last_attendance_time').set(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                 else:
