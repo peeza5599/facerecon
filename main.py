@@ -37,25 +37,6 @@ imgBackground = cv2.imread('Resources/background.png')
 folderModePath = 'Resources/Modes'
 imgModeList = [cv2.imread(os.path.join(folderModePath, path)) for path in os.listdir(folderModePath)]
 
-# ✅ ดาวน์โหลดภาพจาก Firebase Storage
-def download_images_from_firebase():
-    folderPath = "Images"
-    if not os.path.exists(folderPath):
-        os.makedirs(folderPath)
-
-    bucket = storage.bucket()
-    blobs = bucket.list_blobs()
-
-    for blob in blobs:
-        file_name = os.path.basename(blob.name)
-        file_path = os.path.join(folderPath, file_name)
-        
-        if not os.path.exists(file_path):  # โหลดเฉพาะไฟล์ที่ยังไม่มี
-            print(f"Downloading {file_name} ...")
-            blob.download_to_filename(file_path)
-
-    print("✅ All images downloaded from Firebase Storage!")
-
 # ✅ รัน EncodeGenerator.py
 def run_encode_generator():
     print("🔄 Running EncodeGenerator.py ...")
@@ -63,16 +44,18 @@ def run_encode_generator():
     print("✅ EncodeGenerator.py completed!")
 
 # 🔽 เรียกใช้ฟังก์ชัน
-download_images_from_firebase()
 run_encode_generator()
 
 # Load encodings
 print("Loading Encode File ...")
-file = open('EncodeFile.p', 'rb')
-encodeListKnownWithIds = pickle.load(file)
-file.close()
-encodeListKnown, studentIds = encodeListKnownWithIds
-print("Encode File Loaded")
+with open('EncodeFile.p', 'rb') as file:
+    encodeListKnownWithIds = pickle.load(file)
+
+# ✅ ดึงข้อมูล student ID และ encoding ออกมาใหม่ให้ตรงกับ dict
+studentIds = list(encodeListKnownWithIds.keys())  # ได้ student IDs
+encodeListKnown = list(encodeListKnownWithIds.values())  # ได้ encoding ของแต่ละคน
+
+print("✅ Encode File Loaded!")
 
 # Variables
 modeType = 0
@@ -83,7 +66,10 @@ log_interval = timedelta(seconds=30)
 last_unknown_alert_time = {}
 unknown_alert_interval = timedelta(seconds=20)
 unknown_face_counter = {} 
-required_unknown_time = 5 
+required_unknown_time = 5
+threshold = 0.45
+scan_frames_required = 3
+scanned_faces = {}
 
 # LINE Notify
 LINE_NOTIFY_TOKEN = "cknZg26SLz2AhsgQKOMxzKVfOu5H0xlCPDeCXjIoc7Z"
@@ -129,7 +115,6 @@ def send_line_notify(message, token):
     else:
         print("Failed to send notification")
 
-LINE_NOTIFY_TOKEN = "cknZg26SLz2AhsgQKOMxzKVfOu5H0xlCPDeCXjIoc7Z"
 
 while True:
     success, img = cap.read()
@@ -145,12 +130,40 @@ while True:
 
     if faceCurFrame:
         for encodeFace, faceLoc in zip(encodeCurFrame, faceCurFrame):
-            matches = face_recognition.compare_faces(encodeListKnown, encodeFace)
             faceDis = face_recognition.face_distance(encodeListKnown, encodeFace)
-            
+            sorted_indices = np.argsort(faceDis)
+            best_match = sorted_indices[0]
+            second_best = sorted_indices[1] if len(sorted_indices) > 1 else None
             matchIndex = np.argmin(faceDis)
 
-            if matches[matchIndex]:
+            student_id = studentIds[best_match]
+            if student_id not in scanned_faces:
+                scanned_faces[student_id] = []
+            scanned_faces[student_id].append(faceDis[best_match])
+
+            if len(scanned_faces[student_id]) < scan_frames_required:
+                continue  
+
+            avg_face_distance = np.mean(scanned_faces[student_id])
+
+            print(f"🔎 Face Distance (Avg {scan_frames_required} frames): {avg_face_distance:.2f}")
+
+            if avg_face_distance < threshold and (second_best is None or abs(avg_face_distance - faceDis[second_best]) > 0.06):
+                id = student_id
+                print(f"✔️ ตรวจพบ {id} ด้วยค่าความคล้ายคลึง {avg_face_distance:.2f}")
+
+                # ✅ เพิ่ม counter เมื่อเจอใบหน้าที่รู้จัก
+                if counter == 0:
+                    modeType = 1  # เปลี่ยนโหมดการทำงาน
+                    counter = 1
+            else:
+                id = -1  
+                print(f"❌ ไม่พบในระบบ (Avg Face Distance = {avg_face_distance:.2f})")
+                counter = 0  # ✅ รีเซ็ต counter ทันทีที่ไม่พบใบหน้าในระบบ
+
+            scanned_faces.clear()  
+
+            if  avg_face_distance < threshold:
                 y1, x2, y2, x1 = faceLoc
                 y1, x2, y2, x1 = y1 * 4, x2 * 4, y2 * 4, x1 * 4
                 bbox = 55 + x1, 162 + y1, x2 - x1, y2 - y1
