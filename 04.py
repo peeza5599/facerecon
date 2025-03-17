@@ -185,6 +185,7 @@ while True:
     imgBackground[162:162 + 480, 55:55 + 640] = img
     imgBackground[44:44 + 633, 808:808 + 414] = imgModeList[modeType]
     faces = detector(imgS)
+    faceCurFrame = face_recognition.face_locations(imgS)
     gray = cv2.cvtColor(imgS, cv2.COLOR_BGR2GRAY)
     cv2.rectangle(imgBackground, (ROI_X1, ROI_Y1), (ROI_X2, ROI_Y2), (0, 255, 0), 2)
 
@@ -199,6 +200,7 @@ while True:
 
 
     for face in faces:
+
 
         landmarks = predictor(gray, face)
         left_eye = np.array([(landmarks.part(i).x, landmarks.part(i).y) for i in LEFT_EYE_IDX])
@@ -250,6 +252,13 @@ while True:
         ready_to_detect_blink = False
         checkface = False
         faceCurFrame = face_recognition.face_locations(imgS)
+
+        if len(faceCurFrame) > 1:
+            modeType = 5
+            imgBackground[44:44 + 633, 808:808 + 414] = imgModeList[modeType] 
+            checkok = False
+            continue
+
         encodeCurFrame = face_recognition.face_encodings(imgS, faceCurFrame)
         if faceCurFrame:
             for encodeFace, faceLoc in zip(encodeCurFrame, faceCurFrame):
@@ -350,7 +359,7 @@ while True:
                                 'id': id,
                                 'name': studentInfo['name'],
                                 'Room_Number': studentInfo['Room_Number'],
-                                'total_attendance': studentInfo['total_attendance'],
+                                'total_attendance': int(studentInfo['total_attendance']) + 1,
                                 'last_attendance_time': studentInfo['last_attendance_time'],
                                 'dominant_emotion': dominant_emotion,
                                 'emotion_scores': emotion_scores,
