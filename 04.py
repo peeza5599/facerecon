@@ -106,6 +106,7 @@ blink_duration = 0
 min_ear = 1.0
 
 
+
 # LINE Notify
 LINE_NOTIFY_TOKEN = "cknZg26SLz2AhsgQKOMxzKVfOu5H0xlCPDeCXjIoc7Z"
 
@@ -172,6 +173,9 @@ def fetch_student_image(student_id):
     except Exception as e:
         print(f"⚠️ Error loading image for {student_id}: {e}")
         return None  
+    
+ROI_X1, ROI_Y1 = 200, 200  # มุมบนซ้าย
+ROI_X2, ROI_Y2 = 490, 530  # มุมล่างขวา
 
 
 while True:
@@ -182,6 +186,7 @@ while True:
     imgBackground[44:44 + 633, 808:808 + 414] = imgModeList[modeType]
     faces = detector(imgS)
     gray = cv2.cvtColor(imgS, cv2.COLOR_BGR2GRAY)
+    cv2.rectangle(imgBackground, (ROI_X1, ROI_Y1), (ROI_X2, ROI_Y2), (0, 255, 0), 2)
 
     if not faces:
         total_blinks = 0
@@ -190,6 +195,8 @@ while True:
         blink_detected = False
         min_ear = 1.0
         ear_history.clear()
+
+
 
     for face in faces:
 
@@ -272,6 +279,8 @@ while True:
                     if counter == 0:
                         modeType = 1
                         counter = 1
+                        studentInfo = {}
+                        imgStudent = []
                 else:
                     id = -1  
                     print(f"❌ ไม่พบในระบบ (Avg Face Distance = {avg_face_distance:.2f})")
@@ -373,13 +382,13 @@ while True:
                     if counter <= 10:
                         cv2.putText(imgBackground, str(studentInfo['total_attendance']), (861, 125),
                                     cv2.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 1)
-                        cv2.putText(imgBackground, str(studentInfo['Room_Number']), (1006, 550),
+                        cv2.putText(imgBackground, str(studentInfo['role']), (1006, 550),
                                     cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 255), 1)
                         cv2.putText(imgBackground, str(id), (1006, 493),
                                     cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 255), 1)
                         cv2.putText(imgBackground, str(studentInfo['standing']), (910, 625),
                                     cv2.FONT_HERSHEY_COMPLEX, 0.6, (100, 100, 100), 1)
-                        cv2.putText(imgBackground, str(studentInfo['starting_year']), (1125, 625),
+                        cv2.putText(imgBackground, str(studentInfo['studyClass']), (1125, 625),
                                     cv2.FONT_HERSHEY_COMPLEX, 0.6, (100, 100, 100), 1)
 
                         (w, h), _ = cv2.getTextSize(studentInfo['name'], cv2.FONT_HERSHEY_COMPLEX, 1, 1)
@@ -394,14 +403,14 @@ while True:
                     if counter >= 20:
                         counter = 0
                         modeType = 0
-                        studentInfo = []
+                        studentInfo = {}
+                        imgStudent = []
                         imgBackground[44:44 + 633, 808:808 + 414] = imgModeList[modeType]
 
         else:
             checkface = True
             checkok = False
             unknown_face_counter.clear()
-            imgStudent = []
             
 
     cv2.imshow("Face Attendance", imgBackground)
