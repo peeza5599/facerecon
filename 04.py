@@ -72,8 +72,8 @@ detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
 
 # กำหนดค่า EAR Threshold และ Blink Requirement
-EAR_THRESHOLD = 0.22  # ค่าที่ต่ำกว่านี้ถือว่ากระพริบตา
-BLINK_REQUIRED = 3
+EAR_THRESHOLD = 0.25  # ค่าที่ต่ำกว่านี้ถือว่ากระพริบตา
+BLINK_REQUIRED = 2
 EAR_FRAMES = 8 
 OPEN_EYE_FRAMES_REQUIRED = 10 
 MIN_BLINK_DURATION = 3
@@ -111,6 +111,8 @@ ear_history = []
 ready_to_detect_blink = False
 blink_duration = 0 
 min_ear = 1.0
+last_id = None
+
 
 
 
@@ -161,19 +163,12 @@ def send_line_notify(message, token):
     else:
         print("Failed to send notification")
 
-# ✅ Dictionary สำหรับเก็บภาพที่โหลดมาแล้ว
-image_cache = {}
+
 
 def fetch_student_image(student_id):
-    """โหลดภาพนักศึกษาจากโฟลเดอร์ profile/ ในเครื่อง"""
-    if student_id in image_cache:
-        return image_cache[student_id]
-
     local_path = os.path.join("profile", f"{student_id}.png")
     if os.path.exists(local_path):
-        img = cv2.imread(local_path)
-        image_cache[student_id] = img
-        return img
+        return cv2.imread(local_path)
     else:
         print(f"⚠️ ไม่พบภาพของ {student_id} ใน profile/")
         return None 
@@ -217,7 +212,12 @@ while True:
         ready_to_detect_blink = False
         blink_detected = False
         min_ear = 1.0
+        studentInfo = {}
+        imgStudent = []
         ear_history.clear()
+        counter = 0
+        modeType = 0
+        imgBackground[44:44 + 633, 808:808 + 414] = imgModeList[modeType]
 
 
 
@@ -320,10 +320,6 @@ while True:
                 scanned_faces.clear()  
 
                 if  avg_face_distance < threshold:
-                    y1, x2, y2, x1 = faceLoc
-                    y1, x2, y2, x1 = y1 * 4, x2 * 4, y2 * 4, x1 * 4
-                    bbox = 55 + x1, 162 + y1, x2 - x1, y2 - y1
-                    imgBackground = cvzone.cornerRect(imgBackground, bbox, rt=0)
                     id = studentIds[matchIndex]
                     if counter == 0:
                         cvzone.putTextRect(imgBackground, "Loading", (275, 400))
@@ -332,9 +328,9 @@ while True:
                         counter = 1
                         modeType = 1
                 else:
-                    modeType = 1  # active
+                    modeType = 1  
                     counter = 0
-                    id = -1  # Unknown person
+                    id = -1  
 
             if id == -1:  # แจ้งเตือนเมื่อไม่พบผู้ในระบบ
                 current_time = datetime.now()
@@ -345,11 +341,10 @@ while True:
 
                 elapsed_time = (current_time - unknown_face_counter[id]).total_seconds()
 
-                    # ตรวจสอบว่าผ่านไปแล้ว 10 วินาทีหรือไม่
                 if elapsed_time >= required_unknown_time:
                     if id not in last_unknown_alert_time or current_time - last_unknown_alert_time[id] > unknown_alert_interval:
                         message = "พบบุคคลที่ไม่รู้จักในระบบ! กรุณาตรวจสอบ."
-                        # send_line_notify(message, LINE_NOTIFY_TOKEN)
+                        send_line_notify(message, LINE_NOTIFY_TOKEN)
                         print("Unknown face detected and notification sent.")
                         last_unknown_alert_time[id] = current_time
                         unknown_face_counter[id] = current_time
@@ -360,18 +355,16 @@ while True:
 
             if counter != 0:
                 if counter == 1:
-                    # Get the Data
+                    if id != -1 and id != last_id:
+                            studentInfo = {}
+                            imgStudent = []
+                            last_id = id
                     studentInfo = get_user_data(id)  # ใช้ฟังก์ชันที่สร้างไว้
                     print(studentInfo)
 
-                    # Get the Image from the storage
                     imgStudent = fetch_student_image(id)
 
                     emotions = emotion_detector.detect_emotions(img)
-                    if emotions:
-                        emotion_scores = emotions[0]["emotions"]
-                        dominant_emotion = max(emotion_scores, key=emotion_scores.get)
-
                     if emotions:
                         emotion_scores = emotions[0]["emotions"]
                         dominant_emotion = max(emotion_scores, key=emotion_scores.get)
@@ -390,29 +383,30 @@ while True:
                             save_log_to_postgresql_async(log_data)
                             last_log_times[id] = current_time
 
-                        if isinstance(studentInfo['last_attendance_time'], datetime):
-                            last_attendance_time = studentInfo['last_attendance_time']
-                        else:
-                            last_attendance_time = datetime.strptime(studentInfo['last_attendance_time'], "%Y-%m-%d %H:%M:%S")
+                    if isinstance(studentInfo['last_attendance_time'], datetime):
+                        last_attendance_time = studentInfo['last_attendance_time']
+                    else:
+                        last_attendance_time = datetime.strptime(studentInfo['last_attendance_time'], "%Y-%m-%d %H:%M:%S")
 
-                        secondsElapsed = (datetime.now() - last_attendance_time).total_seconds()
+                    secondsElapsed = (datetime.now() - last_attendance_time).total_seconds()
+                    print(secondsElapsed)
 
-                        if secondsElapsed > 30:
-                            studentInfo['total_attendance'] += 1
-                            try:
-                                cursor.execute(
-                                    """
-                                    UPDATE users 
-                                    SET total_attendance = %s, last_attendance_time = %s 
-                                    WHERE id = %s
-                                    """,
-                                    (studentInfo['total_attendance'], datetime.now(), studentInfo['id'])
-                                )
-                                conn.commit()
-                                print(f"✅ อัปเดตข้อมูลของ {studentInfo['id']} สำเร็จ!")
-                            except Exception as e:
-                                conn.rollback()
-                                print(f"⚠️ อัปเดตข้อมูลของ {studentInfo['id']} ไม่สำเร็จ: {e}")
+                    if secondsElapsed > 30:
+                        studentInfo['total_attendance'] += 1
+                        try:
+                            cursor.execute(
+                                """
+                                UPDATE users 
+                                SET total_attendance = %s, last_attendance_time = %s 
+                                WHERE id = %s
+                                """,
+                                (studentInfo['total_attendance'], datetime.now(), studentInfo['id'])
+                            )
+                            conn.commit()
+                            print(f"✅ อัปเดตข้อมูลของ {studentInfo['id']} สำเร็จ!")
+                        except Exception as e:
+                            conn.rollback()
+                            print(f"⚠️ อัปเดตข้อมูลของ {studentInfo['id']} ไม่สำเร็จ: {e}")
                     else:
                         modeType = 3
                         counter = 0
@@ -424,32 +418,34 @@ while True:
 
                     imgBackground[44:44 + 633, 808:808 + 414] = imgModeList[modeType]
 
-                    if counter <= 10:
-                        cv2.putText(imgBackground, str(studentInfo['total_attendance']), (861, 125),
+                    if counter <= 10 :
+                        cv2.putText(imgBackground, str(studentInfo.get('total_attendance', '')), (861, 125),
                                     cv2.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 1)
-                        cv2.putText(imgBackground, str(studentInfo['role']), (1006, 550),
+                        cv2.putText(imgBackground, str(studentInfo.get('role', '')), (1006, 550),
                                     cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 255), 1)
                         cv2.putText(imgBackground, str(id), (1006, 493),
                                     cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 255), 1)
-                        cv2.putText(imgBackground, str(studentInfo['standing']), (910, 625),
+                        cv2.putText(imgBackground, str(studentInfo.get('standing', '')), (910, 625),
                                     cv2.FONT_HERSHEY_COMPLEX, 0.6, (100, 100, 100), 1)
-                        cv2.putText(imgBackground, str(studentInfo['studyClass']), (1125, 625),
+                        cv2.putText(imgBackground, str(studentInfo.get('studyClass', '')), (1125, 625),
                                     cv2.FONT_HERSHEY_COMPLEX, 0.6, (100, 100, 100), 1)
 
-                        (w, h), _ = cv2.getTextSize(studentInfo['name'], cv2.FONT_HERSHEY_COMPLEX, 1, 1)
+                        name = studentInfo.get('name', '')
+                        (w, h), _ = cv2.getTextSize(name, cv2.FONT_HERSHEY_COMPLEX, 1, 1)
                         offset = (414 - w) // 2
-                        cv2.putText(imgBackground, str(studentInfo['name']), (808 + offset, 445),
+                        cv2.putText(imgBackground, name, (808 + offset, 445),
                                     cv2.FONT_HERSHEY_COMPLEX, 1, (50, 50, 50), 1)
 
-                        imgBackground[175:175 + 216, 909:909 + 216] = imgStudent
+                        if imgStudent is not None and isinstance(imgStudent, np.ndarray) and imgStudent.size != 0:
+                            imgBackground[175:175 + 216, 909:909 + 216] = imgStudent
+                        else:
+                            print("⚠️ ไม่มีภาพนักเรียนให้แสดง (imgStudent ว่าง)")
 
                     counter += 1
 
                     if counter >= 20:
                         counter = 0
                         modeType = 0
-                        studentInfo = {}
-                        imgStudent = []
                         imgBackground[44:44 + 633, 808:808 + 414] = imgModeList[modeType]
 
         else:
